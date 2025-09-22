@@ -1,9 +1,59 @@
 import json
 import threading
 import time
-from datetime import datetime, timedelta
-
+import logging
+import sys
 import paho.mqtt.client as mqtt
+import sys
+from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, field
+
+
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # manda pro systemd
+    ]
+)
+
+logger = logging.getLogger("SmartLabServer")
+
+certificate_ca = ""
+
+if sys.platform == "win32":        # Windows
+    logger.info("rodando no Windows")
+    certificate_ca = "C:\Program Files\SmartClassroom\ca.crt"
+elif sys.platform.startswith("linux"):  # Linux
+    logger.info("rodando no Linux")
+    certificate_ca = "/home/csti/ca.crt"
+elif sys.platform == "darwin":     # macOS
+    logger.info("rodando no macOS")
+    certificate_ca = "/home/csti/ca.crt"
+
+
+class Computador:
+    
+    def __init__(self, name: str, side: str):
+        self.name = name
+        self.side = side
+        #self.lastActivity = datetime.now()
+        self.lastActivity = datetime.now()
+        self._last_ts = time.monotonic() - (1 * 60)
+
+    def touch(self):
+        self.lastActivity = datetime.now()
+    def updateDateTime(self):
+        self.lastActivity = datetime.now()
+        self._last_ts = time.monotonic()
+        #print(datetime.now())
+    def is_stale(self, minutes: int = 1) -> bool:
+        #print(time.monotonic() - self._last_ts)
+        #print(self.lastActivity)
+        return (time.monotonic() - self._last_ts) >= minutes * 60
+
 
 # ========= CONFIG =========
 BROKER_HOST = "10.11.102.123"
@@ -11,23 +61,22 @@ BROKER_PORT = 8883
 KEEPALIVE   = 60
 
 TOPIC_PROC  = r"C102\PROCESS_COMPUTERS"   # backslash mantido
-TOPIC_AIR   = "C102/AIR"
+TOPIC_AIR   = "C102/AR_CONDICIONADO"
 TOPIC_AM2302 = "C102/AM2302"
 
-SIDE_A = {
+SIDE_LEFT = {
     "CEPF-C102-C02",
     "CEPF-C102-C03",
     "CEPF-C102-C06",
     "CEPF-C102-C07",
     "CEPF-C102-C08",
-    "CEPF-C102-C11",
     "CEPF-C102-C12",
     "CEPF-C102-C15",
     "CEPF-C102-C16",
     "CEPF-C102-C19",
     "CEPF-C102-C20"
 }
-SIDE_B = {
+SIDE_RIGHT = {
     "CEPF-C102-C01",
     "CEPF-C102-C04",
     "CEPF-C102-C05",
@@ -40,13 +89,23 @@ SIDE_B = {
     "CEPF-C102-C18",
 }
 
-IDLE_MINUTES = 1
+computers_left: dict[str, Computador] = {}
+computers_right: dict[str, Computador] = {}
+
+for pc in SIDE_LEFT:
+    computers_left[pc] = Computador(name=pc, side="LEFT")
+
+for pc in SIDE_RIGHT:
+    computers_right[pc] = Computador(name=pc, side="RIGHT")
+
+IDLE_MINUTES = 2
 MIN_TEMP_ON = 20.0   # condição para permitir Ligar_18
 
 # ========= ESTADO =========
 last_any_msg = datetime.min
-air_state = "unknown"        # "on" | "off" | "unknown"
-last_temp = None             # última TEMPERATURE recebida (float)
+air_state_left = "unknown"        # "on" | "off" | "unknown"
+air_state_right = "unknown"        # "on" | "off" | "unknown"
+last_temp = 27             # última TEMPERATURE recebida (float)
 last_temp_ts = None
 
 lock = threading.Lock()
@@ -55,27 +114,41 @@ lock = threading.Lock()
 def send_air(client: mqtt.Client, command: str):
     client.publish(TOPIC_AIR, command, qos=0, retain=False)
 
-def set_air_on_if_needed(client: mqtt.Client):
+def set_air_on_if_needed(client: mqtt.Client, sideAir):
     """Liga somente se temperatura >= MIN_TEMP_ON."""
-    global air_state, last_temp
+    global air_state_left, air_state_right, last_temp
     with lock:
         temp_ok = (last_temp is not None) and (last_temp >= MIN_TEMP_ON)
         if not temp_ok:
             # Sem temperatura válida ou abaixo do limite — não liga
-            print(f"[INFO] Bloqueado Ligar_18: temperatura={last_temp} (min {MIN_TEMP_ON})")
+            logger.info(f"[INFO] Bloqueado Ligar_18: temperatura={last_temp} (min {MIN_TEMP_ON})")
             return
-        if air_state != "on":
-            send_air(client, "Ligar_18")
-            air_state = "on"
-            print("[CMD] -> C102/AIR = Ligar_18")
+        
+        if sideAir == "LEFT" and air_state_left != "on":            
+            send_air(client, f"LIGAR_18_{sideAir}")
+            logger.info("Status air: ", air_state_left)
+            air_state_left = "on"
+            logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
+        elif sideAir == "RIGHT" and air_state_right != "on":
+            send_air(client, f"LIGAR_18_{sideAir}")
+            logger.info("Status air: ", air_state_right)
+            air_state_right = "on"
+            logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
 
-def set_air_off_if_needed(client: mqtt.Client):
-    global air_state
+def set_air_off_if_needed(client: mqtt.Client, sideAir):
+    global air_state_left, air_state_right
     with lock:
-        if air_state != "off":
-            send_air(client, "Desligar")
-            air_state = "off"
-            print("[CMD] -> C102/AIR = Desligar")
+        if sideAir == "LEFT":
+            if air_state_left != "off":
+                send_air(client, f"DESLIGAR_{sideAir}")
+                air_state_left = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_{sideAir}")
+        else:
+            if air_state_right != "off":
+                send_air(client, f"DESLIGAR_{sideAir}")
+                air_state_right = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_{sideAir}")
+        
 
 # ========= WATCHDOG =========
 def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
@@ -84,8 +157,32 @@ def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
         time.sleep(30)
         with lock:
             idle = datetime.now() - last_any_msg
-        if idle >= timedelta(minutes=IDLE_MINUTES):
-            set_air_off_if_needed(client)
+        
+        allShutdown = True;
+        for pc in computers_left.values():
+            #print(pc.name, pc.is_stale())
+            if not pc.is_stale():
+                allShutdown = False
+                logger.info("Continua ligado left ", pc.name)
+                break
+
+        if allShutdown:
+            set_air_off_if_needed(client, "LEFT")        
+
+
+        allShutdown = True;
+        for pc in computers_right.values():
+            #print(pc.name, pc.is_stale())
+            if not pc.is_stale():
+                allShutdown = False
+                logger.info("Continua ligado right ", pc.name)
+                break
+
+        if allShutdown:            
+            set_air_off_if_needed(client, "RIGHT")
+
+        #if idle >= timedelta(minutes=IDLE_MINUTES):
+            #set_air_off_if_needed(client)
 
 # ========= PARSERS =========
 def parse_temperature(payload) -> float | None:
@@ -143,12 +240,12 @@ def parse_temperature(payload) -> float | None:
 
 # ========= CALLBACKS =========
 def on_connect(client, userdata, flags, rc):
-    print("Conectado ao broker, rc =", rc)
+    logger.info("Conectado ao broker, rc =", rc)
     client.subscribe(TOPIC_PROC)
     client.subscribe(TOPIC_AM2302)
 
 def on_message(client, userdata, msg):
-    global last_any_msg, last_temp, last_temp_ts
+    global last_any_msg, last_temp, last_temp_ts, computers_left, computers_right
 
     topic = msg.topic
     payload_raw = msg.payload
@@ -169,18 +266,22 @@ def on_message(client, userdata, msg):
             last_any_msg = datetime.now()
 
         computer = payload.get("ComputerName") or payload.get("Computer")
-        print(computer)
+        logger.info(computer)
         
         if not computer:
             return
+        
+        
 
-        if computer in SIDE_A:
-            # Tenta ligar (condicionado à temperatura)]
-            
-            set_air_on_if_needed(client)
-        else:
-            # Para lado B não há ação extra, mas resetamos o idle timer acima
-            set_air_on_if_needed(client)
+        # Tenta ligar (condicionado à temperatura)]
+        if computer in SIDE_LEFT:
+            logger.info("Ligando ar esquerdo")
+            computers_left[computer].updateDateTime()       
+            set_air_on_if_needed(client, "LEFT")
+        else:            
+            set_air_on_if_needed(client, "RIGHT")
+            computers_right[computer].updateDateTime()
+            logger.info("Ligando ar direito")
             
 
     elif topic == TOPIC_AM2302:
@@ -190,14 +291,15 @@ def on_message(client, userdata, msg):
             with lock:
                 last_temp = temp
                 last_temp_ts = datetime.now()
-                print("Temperatura Atualizada: ", last_temp)
+                logger.info("Temperatura Atualizada: ", last_temp)
             # log leve
             # print(f"[TEMP] {last_temp:.1f}°C às {last_temp_ts}")
 
 # ========= MAIN =========
 def main():
     client = mqtt.Client()
-    client.tls_set(ca_certs="/home/csti/ca.crt")
+
+    client.tls_set(ca_certs=certificate_ca)
     # client.username_pw_set("usuario", "senha")
 
     client.on_connect = on_connect
@@ -208,6 +310,8 @@ def main():
     stop_event = threading.Event()
     t = threading.Thread(target=watchdog_thread, args=(client, stop_event), daemon=True)
     t.start()
+
+    logger.info("Starting service...")
 
     try:
         with lock:
