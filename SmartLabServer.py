@@ -1,3 +1,14 @@
+# -*- coding: utf-8 -*-
+# Requisitos: paho-mqtt já instalado (pip install paho-mqtt)
+# autor: Rodrigo Mendes Peixoto
+# email: rodrigo.peixoto@ifrj.edu.br
+# data: 2024-06-10
+# versão: 1.0.3
+# descrição: Controla ar condicionado com base em atividade de computadores e temperatura ambiente.
+# Observa mensagens MQTT em C102\PROCESS_COMPUTERS e C102/AM2302.
+# Liga o ar se um computador ligar e a temperatura estiver alta.
+# Desliga o ar se todos os computadores estiverem desligados por mais de 2 minutos
+
 import json
 import threading
 import time
@@ -5,7 +16,7 @@ import logging
 import sys
 import paho.mqtt.client as mqtt
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dtime
 from dataclasses import dataclass, field
 
 
@@ -25,7 +36,7 @@ certificate_ca = ""
 
 if sys.platform == "win32":        # Windows
     logger.info("rodando no Windows")
-    certificate_ca = "C:\Program Files\SmartClassroom\ca.crt"
+    certificate_ca = r"C:\Program Files\SmartClassroom\ca.crt"
 elif sys.platform.startswith("linux"):  # Linux
     logger.info("rodando no Linux")
     certificate_ca = "/home/csti/ca.crt"
@@ -63,6 +74,9 @@ KEEPALIVE   = 60
 TOPIC_PROC  = r"C102\PROCESS_COMPUTERS"   # backslash mantido
 TOPIC_AIR   = "C102/AR_CONDICIONADO"
 TOPIC_AM2302 = "C102/AM2302"
+TEMP_AIR_LEFT = 23
+TEMP_AIR_RIGHT = 23
+TIME_SLEEP = 30
 
 SIDE_LEFT = {
     "CEPF-C102-C02",
@@ -99,15 +113,16 @@ for pc in SIDE_RIGHT:
     computers_right[pc] = Computador(name=pc, side="RIGHT")
 
 IDLE_MINUTES = 2
-MIN_TEMP_ON = 20.0   # condição para permitir Ligar_18
+MIN_TEMP_ON = 23.0   # condição para permitir Ligar_18
+MIN_TEMP_OFF = 20.0
 
 # ========= ESTADO =========
 last_any_msg = datetime.min
 air_state_left = "unknown"        # "on" | "off" | "unknown"
 air_state_right = "unknown"        # "on" | "off" | "unknown"
-last_temp = 27             # última TEMPERATURE recebida (float)
+last_temp = None             # última TEMPERATURE recebida (float)
 last_temp_ts = None
-
+last_temp_external = None
 lock = threading.Lock()
 
 # ========= AÇÕES =========
@@ -118,26 +133,54 @@ def set_air_on_if_needed(client: mqtt.Client, sideAir):
     """Liga somente se temperatura >= MIN_TEMP_ON."""
     global air_state_left, air_state_right, last_temp
     with lock:
-        temp_ok = (last_temp is not None) and (last_temp >= MIN_TEMP_ON)
+        temp_ok = (last_temp is not None) and (last_temp >= MIN_TEMP_ON) and (MIN_TEMP_OFF <= last_temp)
         if not temp_ok:
-            # Sem temperatura válida ou abaixo do limite — não liga
-            logger.info(f"[INFO] Bloqueado Ligar_18: temperatura={last_temp} (min {MIN_TEMP_ON})")
+            # Sem temperatura válida ou fora do limite — não liga
+            logger.info(f"[INFO] Bloqueado Ligar_18: temperatura={last_temp} (entre {MIN_TEMP_OFF} e {MIN_TEMP_ON})")
             return
         
         if sideAir == "LEFT" and air_state_left != "on":            
             send_air(client, f"LIGAR_18_{sideAir}")
-            logger.info("Status air: ", air_state_left)
+            logger.info(f"Status air: {air_state_left}")
             air_state_left = "on"
             logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
         elif sideAir == "RIGHT" and air_state_right != "on":
             send_air(client, f"LIGAR_18_{sideAir}")
-            logger.info("Status air: ", air_state_right)
+            logger.info(f"Status air: {air_state_right}")
             air_state_right = "on"
             logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
 
 def set_air_off_if_needed(client: mqtt.Client, sideAir):
     global air_state_left, air_state_right
     with lock:
+
+
+        if air_state_left == "off" and air_state_right == "off":
+            return
+        
+        now = datetime.now()
+        if now.time() >= dtime(18, 0) or now.time() < dtime(6, 0):
+            logger.info("Fora do horário de uso do ar condicionado.")
+            if air_state_left != "off":
+                send_air(client, f"DESLIGAR_LEFT")
+                air_state_left = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_LEFT")
+            if air_state_right != "off":
+                send_air(client, f"DESLIGAR_RIGHT")
+                air_state_right = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_RIGHT")
+            return
+
+        temp_ok = (last_temp is not None) and (MIN_TEMP_OFF >= last_temp)
+        #desliga o ar se a temperatura for menor que MIN_TEMP_OFF
+        if not temp_ok:
+            send_air(client, f"DESLIGAR_LEFT")
+            send_air(client, f"DESLIGAR_RIGHT")
+            air_state_left = "off"
+            air_state_right = "off"
+            logger.info(f"[CMD] -> C102/AIR = Desligar ambos os lados por temperatura '{last_temp}' ou por atividade inicial")
+            return
+        
         if sideAir == "LEFT":
             if air_state_left != "off":
                 send_air(client, f"DESLIGAR_{sideAir}")
@@ -152,22 +195,54 @@ def set_air_off_if_needed(client: mqtt.Client, sideAir):
 
 # ========= WATCHDOG =========
 def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
-    global last_any_msg
+    global last_any_msg, air_state_left, air_state_right, last_temp_external, last_temp
     while not stop_event.is_set():
-        time.sleep(30)
+        time.sleep(TIME_SLEEP)
         with lock:
             idle = datetime.now() - last_any_msg
         
+
+        now = datetime.now()
+        if (now.time() >= dtime(18, 0) or now.time() < dtime(6, 0)) and (air_state_left != "off" or air_state_right != "off"):
+            logger.info("Fora do horário de uso do ar condicionado.")
+            if air_state_left != "off":
+                send_air(client, f"DESLIGAR_LEFT")
+                air_state_left = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_LEFT")
+            if air_state_right != "off":
+                send_air(client, f"DESLIGAR_RIGHT")
+                air_state_right = "off"
+                logger.info(f"[CMD] -> C102/AIR = Desligar_RIGHT")
+            continue
+        else:            
+            # se a temperatura externa for menor que a interna e a interna estiver baixa, desliga o ar
+            if (last_temp_external is not None) and last_temp_external < last_temp and last_temp < MIN_TEMP_ON:
+                logger.info(f"Temperatura externa ({last_temp_external}) menor que interna ({last_temp}). Desligando ar.")
+                if air_state_left != "off":
+                    send_air(client, f"DESLIGAR_LEFT")
+                    air_state_left = "off"
+                    logger.info(f"[CMD] -> C102/AIR = Desligar_LEFT")
+                if air_state_right != "off":
+                    send_air(client, f"DESLIGAR_RIGHT")
+                    air_state_right = "off"
+                    logger.info(f"[CMD] -> C102/AIR = Desligar_RIGHT")
+                continue
+
+            
+
         allShutdown = True;
+        countOnPcs = 0
         for pc in computers_left.values():
             #print(pc.name, pc.is_stale())
             if not pc.is_stale():
                 allShutdown = False
-                logger.info("Continua ligado left ", pc.name)
+                logger.info(f"Continua ligado left {pc.name}")
+                countOnPcs +=1
                 break
 
-        if allShutdown:
-            set_air_off_if_needed(client, "LEFT")        
+        if allShutdown and air_state_left != "off":
+            set_air_off_if_needed(client, "LEFT")
+            logger.info("Desligar ar esquerdo por inatividade")        
 
 
         allShutdown = True;
@@ -175,11 +250,12 @@ def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
             #print(pc.name, pc.is_stale())
             if not pc.is_stale():
                 allShutdown = False
-                logger.info("Continua ligado right ", pc.name)
+                logger.info(f"Continua ligado right {pc.name}")
                 break
 
-        if allShutdown:            
+        if allShutdown and air_state_right != "off":            
             set_air_off_if_needed(client, "RIGHT")
+            logger.info("Desligar ar direito por inatividade")
 
         #if idle >= timedelta(minutes=IDLE_MINUTES):
             #set_air_off_if_needed(client)
@@ -239,8 +315,8 @@ def parse_temperature(payload) -> float | None:
         return None
 
 # ========= CALLBACKS =========
-def on_connect(client, userdata, flags, rc):
-    logger.info("Conectado ao broker, rc =", rc)
+def on_connect(client, userdata, flags, rc, properties=None):
+    logger.info(f"Conectado ao broker, rc = {rc}")
     client.subscribe(TOPIC_PROC)
     client.subscribe(TOPIC_AM2302)
 
@@ -291,9 +367,13 @@ def on_message(client, userdata, msg):
             with lock:
                 last_temp = temp
                 last_temp_ts = datetime.now()
-                logger.info("Temperatura Atualizada: ", last_temp)
+                logger.info(f"Temperatura interna Atualizada: {last_temp}")
             # log leve
             # print(f"[TEMP] {last_temp:.1f}°C às {last_temp_ts}")
+        elif temp is not None and located == "EXTERNO_CSTI":
+            with lock:
+                last_temp_external = temp
+                logger.info(f"Temperatura Externa Atualizada: {last_temp_external}")
 
 # ========= MAIN =========
 def main():

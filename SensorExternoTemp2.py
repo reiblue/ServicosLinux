@@ -3,10 +3,11 @@
 
 # Requisitos: psycopg2 já instalado (como no seu outro script)
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import psycopg2
 import socket
 import sys
+import ssl
 
 # ======== CONFIG BANCO =========
 db_user = "csti"
@@ -102,10 +103,23 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     try:
-        with HTTPServer((BIND_ADDR, PORT), Handler) as httpd:
+        with ThreadingHTTPServer((BIND_ADDR, PORT), Handler) as httpd:
             host = BIND_ADDR if BIND_ADDR != "0.0.0.0" else socket.gethostname()
             print(f"Servidor ouvindo em http://{BIND_ADDR}:{PORT}  (host: {host})")
             httpd.serve_forever()
+        
+        """httpd = ThreadingHTTPServer((BIND_ADDR, PORT), Handler)
+
+        # 🔹 Cria um contexto SSL moderno
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile="ssl.crt", keyfile="ssl.key")
+
+        # 🔹 Envolve o socket do servidor
+        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+
+        host = BIND_ADDR if BIND_ADDR != "0.0.0.0" else socket.gethostname()
+        print(f"Servidor ouvindo em https://{BIND_ADDR}:{PORT}  (host: {host})")
+        httpd.serve_forever()"""
     except OSError as e:
         print(f"Falha ao iniciar servidor na porta {PORT}: {e}", file=sys.stderr)
         sys.exit(1)
