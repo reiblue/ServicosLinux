@@ -2,8 +2,9 @@
 # Requisitos: paho-mqtt já instalado (pip install paho-mqtt)
 # autor: Rodrigo Mendes Peixoto
 # email: rodrigo.peixoto@ifrj.edu.br
-# data: 2024-06-10
-# versão: 1.0.3
+# data de criação: 2024-06-10
+# data de modificação: 2024-09-25
+# versão: 1.0.4
 # descrição: Controla ar condicionado com base em atividade de computadores e temperatura ambiente.
 # Observa mensagens MQTT em C102\PROCESS_COMPUTERS e C102/AM2302.
 # Liga o ar se um computador ligar e a temperatura estiver alta.
@@ -74,9 +75,12 @@ KEEPALIVE   = 60
 TOPIC_PROC  = r"C102\PROCESS_COMPUTERS"   # backslash mantido
 TOPIC_AIR   = "C102/AR_CONDICIONADO"
 TOPIC_AM2302 = "C102/AM2302"
+TOPIC_ENERGY = "C102/ENERGY_MONITOR"
 TEMP_AIR_LEFT = 23
 TEMP_AIR_RIGHT = 23
 TIME_SLEEP = 30
+
+
 
 SIDE_LEFT = {
     "CEPF-C102-C02",
@@ -115,7 +119,7 @@ for pc in SIDE_RIGHT:
 IDLE_MINUTES = 2
 MIN_TEMP_ON = 23.0   # condição para permitir Ligar_18
 MIN_TEMP_OFF = 20.0
-
+MIN_ENERGY =  0.1  # kwh, condição para permitir Ligar_18
 # ========= ESTADO =========
 last_any_msg = datetime.min
 air_state_left = "unknown"        # "on" | "off" | "unknown"
@@ -123,11 +127,12 @@ air_state_right = "unknown"        # "on" | "off" | "unknown"
 last_temp = None             # última TEMPERATURE recebida (float)
 last_temp_ts = None
 last_temp_external = None
+last_energy = 0.0         # última ENERGY recebida (float)
 lock = threading.Lock()
 
 # ========= AÇÕES =========
 def send_air(client: mqtt.Client, command: str):
-    client.publish(TOPIC_AIR, command, qos=0, retain=False)
+    client.publish(TOPIC_AIR, command + "\n", qos=0, retain=False)
 
 def set_air_on_if_needed(client: mqtt.Client, sideAir):
     """Liga somente se temperatura >= MIN_TEMP_ON."""
@@ -195,13 +200,23 @@ def set_air_off_if_needed(client: mqtt.Client, sideAir):
 
 # ========= WATCHDOG =========
 def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
-    global last_any_msg, air_state_left, air_state_right, last_temp_external, last_temp
+    global last_any_msg, air_state_left, air_state_right, last_temp_external, last_temp, last_energy, MIN_ENERGY
     while not stop_event.is_set():
         time.sleep(TIME_SLEEP)
         with lock:
             idle = datetime.now() - last_any_msg
         
 
+        if air_state_left == "off" and air_state_right == "off":
+            if(last_energy > MIN_ENERGY):
+                send_air(client, f"DESLIGAR_RIGHT")
+                send_air(client, f"DESLIGAR_LEFT")
+                logger.info(f"[INFO] Bloqueado Desligar: consumo de energia {last_energy} kwh maior que {MIN_ENERGY} kwh")
+                last_energy = 0.0
+            continue  # ambos os ares desligados, nada a fazer
+
+            
+        
         now = datetime.now()
         if (now.time() >= dtime(18, 0) or now.time() < dtime(6, 0)) and (air_state_left != "off" or air_state_right != "off"):
             logger.info("Fora do horário de uso do ar condicionado.")
@@ -319,9 +334,10 @@ def on_connect(client, userdata, flags, rc, properties=None):
     logger.info(f"Conectado ao broker, rc = {rc}")
     client.subscribe(TOPIC_PROC)
     client.subscribe(TOPIC_AM2302)
+    client.subscribe(TOPIC_ENERGY)
 
 def on_message(client, userdata, msg):
-    global last_any_msg, last_temp, last_temp_ts, computers_left, computers_right
+    global last_any_msg, last_temp, last_temp_ts, computers_left, computers_right, last_energy
 
     topic = msg.topic
     payload_raw = msg.payload
@@ -336,8 +352,6 @@ def on_message(client, userdata, msg):
 
     # Atualiza atividade (para qualquer mensagem de máquina em PROCESS_COMPUTERS)
     if topic == TOPIC_PROC:
-        
-
         with lock:
             last_any_msg = datetime.now()
 
@@ -345,8 +359,7 @@ def on_message(client, userdata, msg):
         logger.info(computer)
         
         if not computer:
-            return
-        
+            return       
         
 
         # Tenta ligar (condicionado à temperatura)]
@@ -357,8 +370,7 @@ def on_message(client, userdata, msg):
         else:            
             set_air_on_if_needed(client, "RIGHT")
             computers_right[computer].updateDateTime()
-            logger.info("Ligando ar direito")
-            
+            logger.info("Ligando ar direito")           
 
     elif topic == TOPIC_AM2302:
         temp = parse_temperature(payload_raw)
@@ -374,6 +386,12 @@ def on_message(client, userdata, msg):
             with lock:
                 last_temp_external = temp
                 logger.info(f"Temperatura Externa Atualizada: {last_temp_external}")
+    elif topic == TOPIC_ENERGY:
+        energy = payload.get("KWH")
+        if energy is not None:
+            with lock:
+                last_energy = energy
+                logger.info(f"Consumo de energia Atualizado: {last_energy} kwh")
 
 # ========= MAIN =========
 def main():
