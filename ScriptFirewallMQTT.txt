@@ -1,0 +1,31 @@
+# Definir parâmetros
+$Broker = "10.11.102.123" # <-- Altere aqui
+$Porta = 8883
+$RegraNome = "MQTT 8883"
+
+Write-Host "==== Verificando conexão com o Broker MQTT ====" -ForegroundColor Cyan
+Test-NetConnection -ComputerName $Broker -Port $Porta
+
+Write-Host "`n==== Criando regras de Firewall ====" -ForegroundColor Cyan
+
+# Criar regra de saída
+if (-not (Get-NetFirewallRule -DisplayName "$RegraNome Outbound" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "$RegraNome Outbound" -Direction Outbound -LocalPort $Porta -Protocol TCP -Action Allow
+    Write-Host "✔️ Regra de saída criada."
+} else {
+    Write-Host "ℹ️ Regra de saída já existe."
+}
+
+# Criar regra de entrada
+if (-not (Get-NetFirewallRule -DisplayName "$RegraNome Inbound" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "$RegraNome Inbound" -Direction Inbound -LocalPort $Porta -Protocol TCP -Action Allow
+    Write-Host "✔️ Regra de entrada criada."
+} else {
+    Write-Host "ℹ️ Regra de entrada já existe."
+}
+
+Write-Host "`n==== Regras criadas/verificadas ====" -ForegroundColor Cyan
+Get-NetFirewallRule | Where-Object DisplayName -like "*MQTT*"
+
+Write-Host "`n==== Testando novamente conexão ====" -ForegroundColor Cyan
+Test-NetConnection -ComputerName $Broker -Port $Porta

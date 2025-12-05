@@ -1,0 +1,25 @@
+Configurações importantes:
+
+Visualizar os dipositivos que conectaram no mqtt
+sudo tail -f /var/log/mosquitto/mosquitto.log
+
+Criando usuário para o broker
+# Sintaxe: sudo mosquitto_passwd -c [caminho_do_arquivo] [nome_usuario]
+#senha: cst1!C3PF#2026@
+#usuário adm 
+sudo mosquitto_passwd -c /etc/mosquitto/passwd rodrigo.peixoto
+
+#usuário comum
+#senha: cst1!C3PF#2026@esp_user
+sudo mosquitto_passwd /etc/mosquitto/passwd esp_user
+
+#senha: cst1!C3PF#2026@python
+sudo mosquitto_passwd /etc/mosquitto/passwd python_user
+
+#senha: cst1!C3PF#2026@dt
+sudo mosquitto_passwd /etc/mosquitto/passwd dt_user
+
+#permissões de leitura do arquivo
+# Corrige o dono do arquivo de senhas
+sudo chown mosquitto:mosquitto /etc/mosquitto/passwd
+sudo chmod 640 /etc/mosquitto/passwd

@@ -6,8 +6,8 @@ from datetime import datetime
 # ==== Configuração do PostgreSQL ====
 db_config = {
     'dbname': 'c102',
-    'user': 'root',
-    'password': '',
+    'user': 'csti',
+    'password': '*1frj7csti7gov7br2024*',
     'host': 'localhost',
     'port': '5432'
 }
@@ -40,8 +40,8 @@ def insert_kwh_consumption(cursor, location, accumulated, value, pulse):
 # ==== Callback de conexão ====
 def on_connect(client, userdata, flags, rc):
     print("Conectado com código: "+str(rc))
-    client.subscribe("C102\\HARDWARE_SENSORS")
-    client.subscribe("C102\\PROCESS_COMPUTERS")
+    client.subscribe("C102/HARDWARE_SENSORS")
+    client.subscribe("C102/PROCESS_COMPUTERS")
     client.subscribe("C102/AM2302")
     client.subscribe("C102/ENERGY_MONITOR")
     #client.subscribe("#")
@@ -53,7 +53,7 @@ def on_message(client, userdata, msg):
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
 
-        if msg.topic == "C102\\HARDWARE_SENSORS":
+        if msg.topic == "C102/HARDWARE_SENSORS":
             #print('Sensors', payload['Computer'], 'Time: ', payload['Timestamp'])
             for item in payload:
                 computer = item['Computer']
@@ -65,7 +65,7 @@ def on_message(client, userdata, msg):
                 for sensor in item.get('Sensors', []):
                     insert_hardware_sensor(cursor, computer, name, sensor['Type'], sensor['Name'], sensor['Value'], timestamp)
 
-        elif msg.topic == "C102\\PROCESS_COMPUTERS":
+        elif msg.topic == "C102/PROCESS_COMPUTERS":
             computer_name = payload['ComputerName']
             #print("Time PROCESS_COMPUTERS: ", payload['Timestamp'])
             timestamp = payload['Timestamp']

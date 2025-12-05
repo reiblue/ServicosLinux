@@ -1,0 +1,5 @@
+Test-NetConnection -ComputerName 10.11.102.123 -Port 8883
+
+New-NetFirewallRule -DisplayName "MQTT Outbound 8883" -Direction Outbound -LocalPort 8883 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "MQTT Outbound 8883" -Direction Outbound -LocalPort 8883 -Protocol TCP -Action Allow
+Get-NetFirewallRule | Where-Object DisplayName -like "*MQTT*"
