@@ -3,6 +3,14 @@ Configurações importantes:
 Visualizar os dipositivos que conectaram no mqtt
 sudo tail -f /var/log/mosquitto/mosquitto.log
 
+Escrever no /etc/mosquitto/mosquitto.conf
+# Desabilita acesso sem senha (CRÍTICO)
+allow_anonymous false
+
+# Aponta para o arquivo que criamos
+password_file /etc/mosquitto/passwd
+--------------------------------------
+
 Criando usuário para o broker
 # Sintaxe: sudo mosquitto_passwd -c [caminho_do_arquivo] [nome_usuario]
 #senha: cst1!C3PF#2026@
@@ -18,6 +26,10 @@ sudo mosquitto_passwd /etc/mosquitto/passwd python_user
 
 #senha: cst1!C3PF#2026@dt
 sudo mosquitto_passwd /etc/mosquitto/passwd dt_user
+
+#senha: pc!C3PF#c102$2026@S3rv1c3.
+sudo mosquitto_passwd /etc/mosquitto/passwd service.windows.pc
+
 
 #permissões de leitura do arquivo
 # Corrige o dono do arquivo de senhas

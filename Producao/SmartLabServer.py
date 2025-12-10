@@ -3,12 +3,12 @@
 # autor: Rodrigo Mendes Peixoto
 # email: rodrigo.peixoto@ifrj.edu.br
 # data de criação: 2025-06-10
-# data de modificação: 2025-12-08
+# data de modificação: 2025-12-07
 # versão: 1.0.5
 # descrição: Controla ar condicionado com base em atividade de computadores e temperatura ambiente.
 # Observa mensagens MQTT em C102\PROCESS_COMPUTERS e C102/AM2302.
 # Liga o ar se um computador ligar e a temperatura estiver alta.
-# Desliga o ar se todos os computadores estiverem desligados por mais de 5 minutos
+# Desliga o ar se todos os computadores estiverem desligados por mais de 2 minutos
 
 import json
 import threading
@@ -17,9 +17,8 @@ import logging
 import sys
 import paho.mqtt.client as mqtt
 import sys
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, time as dtime
 from dataclasses import dataclass, field
-
 
 
 
@@ -49,17 +48,13 @@ TOPIC_AM2302 = "C102/AM2302"
 TOPIC_ENERGY = "C102/ENERGY_MONITOR"
 TOPIC_STATUS_RELES = "C102/RELES"
 TOPIC_DOOR_OPEN = "C102/DOOR_STATUS"
-TOPIC_STATUS_LABORATOY = "C102/STATUS_LABORATORY"
-TOPIC_COMPUTER_SHUTDOWN = "C102/SHUTDOWN_COMPUTER"
+TOPIC_STATUS_LABORATOY = "C102/STATUS"
 
 TEMP_AIR_LEFT = 23
 TEMP_AIR_RIGHT = 23
-#TIME_SLEEP = 60 * 5
-TIME_SLEEP = 60 
-TIME_WAIT_COMPUTER_OFF = 20  # minutos
+TIME_SLEEP = 60 * 5
 LABORATORY_SHUTDOWN = False
 DOOR_STATUS = "NONE"  # "OPEN" | "CLOSED"
-
 
 
 if sys.platform == "win32":        # Windows
@@ -81,7 +76,7 @@ class Computador:
         self.name = name
         self.side = side
         self.lastActivity = datetime.now()
-        self._last_ts = time.monotonic()  - timedelta(days=1).total_seconds() # começa "fresco"
+        self._last_ts = time.monotonic()  # começa "fresco"
 
     def touch(self):
         self.lastActivity = datetime.now()
@@ -95,9 +90,6 @@ class Computador:
         elapsed = time.monotonic() - self._last_ts
         # print(f"{self.name} parado há {elapsed:.1f}s")
         return elapsed >= minutes * 60
-    
-    def shutdownComputer(self):
-        self._last_ts = time.monotonic() - timedelta(days=1).total_seconds()  # força stale
 
 # ========= COMPUTADORES =========
 SIDE_LEFT = {
@@ -143,8 +135,8 @@ MIN_TEMP_OFF = 20.0
 MIN_ENERGY =  0.1  # kwh, condição para permitir Ligar_18
 # ========= ESTADO =========
 last_any_msg = datetime.min
-air_state_left = "off"        # "on" | "off" | "unknown"
-air_state_right = "off"        # "on" | "off" | "unknown"
+air_state_left = "unknown"        # "on" | "off" | "unknown"
+air_state_right = "unknown"        # "on" | "off" | "unknown"
 last_temp = 29             # última TEMPERATURE recebida (float)
 last_temp_ts = None
 last_temp_external = None
@@ -236,50 +228,49 @@ def watchdog_thread(client: mqtt.Client, stop_event: threading.Event):
         with lock:
             idle = datetime.now() - last_any_msg
 
-        allPCShutdownLeft = True;
+        allShutdownLeft = True;
         countOnPcs = 0
         for pc in computers_left.values():
             #print(pc.name, pc.is_stale())
-            if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):
-                allPCShutdownLeft = False
+            if not pc.is_stale(7):
+                allShutdownLeft = False
                 #logger.info(f"Continua ligado left {pc.name}")
                 countOnPcs +=1
                 #print(pc.name + " is on")
                 break
 
-        allPCShutdownRight = True;
+        allShutdownRight = True;
         for pc in computers_right.values():
             #print(pc.name, pc.is_stale())
-            if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):
-                allPCShutdownRight = False
-                countOnPcs +=1
+            if not pc.is_stale(7):
+                allShutdownRight = False
                 #logger.info(f"Continua ligado right {pc.name}")
                 #print(pc.name + " is on")
                 break
 
-        if allPCShutdownLeft and air_state_left != "off":
+        if allShutdownLeft and air_state_left != "off":
             set_air_off_if_needed(client, "LEFT")
             logger.info("Desligar ar esquerdo por inatividade")       
        
 
-        if allPCShutdownRight and air_state_right != "off":            
+        if allShutdownRight and air_state_right != "off":            
             set_air_off_if_needed(client, "RIGHT")
             logger.info("Desligar ar direito por inatividade")
 
-        if(not LABORATORY_SHUTDOWN  and allPCShutdownLeft and allPCShutdownRight):
-            sendMqttCommand(client, "C102/STATUS", True)
-            logger.info("Enviado comando de desligamento do laboratorio")
+       
             
 
         if air_state_left == "off" and air_state_right == "off":
-            if(last_energy > MIN_ENERGY and (allPCShutdownLeft and allPCShutdownRight)):
+            if(last_energy > MIN_ENERGY and (not allShutdownLeft or not allShutdownRight)):
                 send_air(client, f"DESLIGAR_RIGHT")
                 send_air(client, f"DESLIGAR_LEFT")
                 logger.info(f"[INFO] Bloqueado Desligar: consumo de energia {last_energy} kwh maior que {MIN_ENERGY} kwh")
                 last_energy = 0.0
             continue  # ambos os ares desligados, nada a fazer
 
-            
+        if(not LABORATORY_SHUTDOWN  and allShutdownLeft and allShutdownRight):
+            sendMqttCommand(client, "C102/STATUS", True)
+            logger.info("Enviado comando de desligamento do laboratorio")    
         
         now = datetime.now()
         if (now.time() >= dtime(18, 0) or now.time() < dtime(6, 0)) and (air_state_left != "off" or air_state_right != "off"):
@@ -377,11 +368,6 @@ def on_connect(client, userdata, flags, rc, properties=None):
     client.subscribe(TOPIC_DOOR_OPEN)
     client.subscribe(TOPIC_RETURN_AIR)
     client.subscribe(TOPIC_STATUS_LABORATOY)
-    
-    logger.info("Sistema iniciado. Solicitando informações iniciais...")
-    #Busca informações iniciais
-    client.publish("C102/DOOR", "\n", qos=0, retain=False)
-    sendMqttCommand(client, "C102/STATUS", True)
 
 def on_message(client, userdata, msg):
     global last_any_msg, last_temp, last_temp_ts, last_temp_external, computers_left, computers_right, last_energy, air_state_left, air_state_right, DOOR_STATUS, LABORATORY_SHUTDOWN
@@ -476,10 +462,6 @@ def on_message(client, userdata, msg):
         json_payload = json.dumps(payload)
         client.publish("C102/LAST_STATUS", json_payload)
         logger.info(f"Status do laboratorio solicitado. Enviando: {json_payload}")
-    elif topic == TOPIC_COMPUTER_SHUTDOWN:
-        computer = payload.get("COMPUTER_NAME")
-        computers_left[computer].shutdownComputer()        
-        
 
 # ========= MAIN =========
 def main():
@@ -494,13 +476,13 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(BROKER_HOST, BROKER_PORT, KEEPALIVE) 
+    client.connect(BROKER_HOST, BROKER_PORT, KEEPALIVE)
 
     stop_event = threading.Event()
     t = threading.Thread(target=watchdog_thread, args=(client, stop_event), daemon=True)
     t.start()
 
-    logger.info("Starting service...") 
+    logger.info("Starting service...")
 
     try:
         with lock:

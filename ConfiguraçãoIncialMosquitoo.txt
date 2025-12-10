@@ -1,0 +1,34 @@
+Cetificado mosquitto
+
+sudo mkdir -p /etc/mosquitto/certs
+cd /etc/mosquitto/certs
+
+sudo openssl req -new -x509 -days 365 -nodes -out mosquitto.crt -keyout mosquitto.key
+
+sudo chown mosquitto:mosquitto /etc/mosquitto/certs/*
+sudo chmod 600 /etc/mosquitto/certs/*
+
+sudo mosquitto_passwd -b /etc/mosquitto/passwd usuario senha
+
+sudo chown mosquitto:mosquitto /etc/mosquitto/passwd
+sudo chmod 600 /etc/mosquitto/passwd
+
+
+mosquitto_sub -h 192.168.100.44 -p 8883 -t "teste" --cafile /etc/mosquitto/certs/mosquitto.crt -u "csti" -P "*1frj7csti7gov7br2025"
+
+mosquitto_pub -h localhost -p 8883 -t "teste" -m "Olá, MQTT seguro!" --cafile /etc/mosquitto/certs/mosquitto.crt -u "csti" -P "*1frj7csti7gov7br2025"
+
+
+mosquitto_sub -h localhost -p 8883 -t "teste" --cafile /etc/mosquitto/certs/mosquitto.crt -u "usuario1" -P "usuario1"
+
+sudo chmod 644 /etc/mosquitto/certs/mosquitto.crt
+sudo chown mosquitto:mosquitto /etc/mosquitto/certs/*
+
+
+
+
+Error: Protocol error
+
+mosquitto_sub -h 192.168.100.44 -p 1883 -t "topico/de/exemplo" -u "usuario1" -P "senha1" -v
+
+mosquitto_sub -h 192.168.100.44 -p 8883 -t "topico/de/exemplo"  -u "usuario1" -P "senha1" -v
