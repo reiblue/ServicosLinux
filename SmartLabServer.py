@@ -4,7 +4,7 @@
 # email: rodrigo.peixoto@ifrj.edu.br
 # data de criação: 2025-06-10
 # data de modificação: 2025-12-08
-# versão: 1.0.5
+# versão: 1.0.7
 # descrição: Controla ar condicionado com base em atividade de computadores e temperatura ambiente.
 # Observa mensagens MQTT em C102\PROCESS_COMPUTERS e C102/AM2302.
 # Liga o ar se um computador ligar e a temperatura estiver alta.
@@ -37,12 +37,12 @@ logger = logging.getLogger("SmartLabServer")
 certificate_ca = ""
 
 # ========= CONFIG =========
-BROKER_HOST = "10.11.4.111"
-#BROKER_HOST = "192.168.100.52"
+#BROKER_HOST = "10.11.4.111"
+BROKER_HOST = "192.168.100.52"
 BROKER_PORT = 8883
 KEEPALIVE   = 60
 
-TOPIC_PROC  = r"C102/PROCESS_COMPUTERS"   # backslash mantido
+TOPIC_COMPUTER_KEEPALIVE  = r"C102/SHUTDOWN_COMPUTER"   # backslash mantido
 TOPIC_AIR   = "C102/AR_CONDICIONADO"
 TOPIC_RETURN_AIR = "C102/AIR"
 TOPIC_AM2302 = "C102/AM2302"
@@ -50,7 +50,8 @@ TOPIC_ENERGY = "C102/ENERGY_MONITOR"
 TOPIC_STATUS_RELES = "C102/RELES"
 TOPIC_DOOR_OPEN = "C102/DOOR_STATUS"
 TOPIC_STATUS_LABORATOY = "C102/STATUS_LABORATORY"
-TOPIC_COMPUTER_SHUTDOWN = "C102/SHUTDOWN_COMPUTER"
+TOPIC_PROCESS_COMPUTERS = "C102/PROCESS_COMPUTERS"
+TOPIC_SENSORS = "C102/HARDWARE_SENSORS"
 
 TEMP_AIR_LEFT = 23
 TEMP_AIR_RIGHT = 23
@@ -64,8 +65,8 @@ DOOR_STATUS = "NONE"  # "OPEN" | "CLOSED"
 
 if sys.platform == "win32":        # Windows
     logger.info("rodando no Windows")
-    certificate_ca = r"C:\Program Files\SmartClassroom\ca.crt"
-    #certificate_ca = r"C:\Users\Peixoto\Documents\Pós-Graduações\Mestrado\UFJF - Computação\Pesquisa\certs\notebook.crt"
+    #certificate_ca = r"C:\Program Files\SmartClassroom\ca.crt"
+    certificate_ca = r"C:\Users\Peixoto\Documents\Pós-Graduações\Mestrado\UFJF - Computação\Pesquisa\certs\notebook.crt"
     #BROKER_HOST = "10.11.102.123"
 elif sys.platform.startswith("linux"):  # Linux
     logger.info("rodando no Linux")
@@ -80,6 +81,8 @@ class Computador:
     def __init__(self, name: str, side: str):
         self.name = name
         self.side = side
+        self.processes: Optional[bytes] = None
+        self.sensors: Optional[bytes] = None
         self.lastActivity = datetime.now()
         self._last_ts = time.monotonic()  - timedelta(days=1).total_seconds() # começa "fresco"
 
@@ -99,6 +102,13 @@ class Computador:
     def shutdownComputer(self):
         self._last_ts = time.monotonic() - timedelta(days=1).total_seconds()  # força stale
 
+    def setProcesses(self, payload: bytes) -> None:
+        self.processes = payload
+
+    def setSensors(self, payload: bytes) -> None:
+        self.sensors = payload
+
+
 # ========= COMPUTADORES =========
 SIDE_LEFT = {
     "CEPF-C102-C02",
@@ -106,6 +116,7 @@ SIDE_LEFT = {
     "CEPF-C102-C06",
     "CEPF-C102-C07",
     "CEPF-C102-C08",
+    "CEPF-C102-C11",
     "CEPF-C102-C12",
     "CEPF-C102-C15",
     "CEPF-C102-C16",
@@ -117,16 +128,16 @@ SIDE_RIGHT = {
     "CEPF-C102-C04",
     "CEPF-C102-C05",
     "CEPF-C102-C09",
-    "CEPF-C102-C10",
-    "CEPF-C102-C11",
+    "CEPF-C102-C10",    
     "CEPF-C102-C13",
     "CEPF-C102-C14",
     "CEPF-C102-C17",
-    "CEPF-C102-C18",
+    "CEPF-C102-C18",   
 }
 
 if sys.platform == "win32":
     SIDE_RIGHT.add("DESK-DELL-C01")
+    SIDE_LEFT.add("CEPF-C102-V02")
 
 computers_left: dict[str, Computador] = {}
 computers_right: dict[str, Computador] = {}
@@ -175,12 +186,12 @@ def set_air_on_if_needed(client: mqtt.Client, sideAir):
             return
         
         if sideAir == "LEFT" and air_state_left != "on":            
-            send_air(client, f"LIGAR_18_{sideAir}")
+            send_air(client, f"LIGAR_23_{sideAir}")
             logger.info(f"Status air: {air_state_left}")
             #air_state_left = "on"
-            logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
+            logger.info(f"[CMD] -> C102/AIR = LIGAR_23_{sideAir}")
         elif sideAir == "RIGHT" and air_state_right != "on":
-            send_air(client, f"LIGAR_18_{sideAir}")
+            send_air(client, f"LIGAR_23_{sideAir}")
             logger.info(f"Status air: {air_state_right}")
             #air_state_right = "on"
             logger.info(f"[CMD] -> C102/AIR = LIGAR_18_{sideAir}")
@@ -206,7 +217,8 @@ def set_air_off_if_needed(client: mqtt.Client, sideAir):
                 logger.info(f"[CMD] -> C102/AIR = Desligar_RIGHT")
             return
 
-        temp_ok = (last_temp is not None) and (MIN_TEMP_OFF >= last_temp)
+        #verifica a temperatura antes de desligar ambos os lados
+        temp_ok = (last_temp is not None) and (MIN_TEMP_OFF <= last_temp)
         #desliga o ar se a temperatura for menor que MIN_TEMP_OFF
         if not temp_ok:
             send_air(client, f"DESLIGAR_LEFT")
@@ -370,13 +382,15 @@ def parse_temperature(payload) -> float | None:
 # ========= CALLBACKS =========
 def on_connect(client, userdata, flags, rc, properties=None):
     logger.info(f"Conectado ao broker, rc = {rc}")
-    client.subscribe(TOPIC_PROC)
+    client.subscribe(TOPIC_COMPUTER_KEEPALIVE)
     client.subscribe(TOPIC_AM2302)
     client.subscribe(TOPIC_ENERGY)
     client.subscribe(TOPIC_STATUS_RELES)
     client.subscribe(TOPIC_DOOR_OPEN)
     client.subscribe(TOPIC_RETURN_AIR)
     client.subscribe(TOPIC_STATUS_LABORATOY)
+    client.subscribe(TOPIC_PROCESS_COMPUTERS)
+    client.subscribe(TOPIC_SENSORS)
     
     logger.info("Sistema iniciado. Solicitando informações iniciais...")
     #Busca informações iniciais
@@ -384,40 +398,53 @@ def on_connect(client, userdata, flags, rc, properties=None):
     sendMqttCommand(client, "C102/STATUS", True)
 
 def on_message(client, userdata, msg):
-    global last_any_msg, last_temp, last_temp_ts, last_temp_external, computers_left, computers_right, last_energy, air_state_left, air_state_right, DOOR_STATUS, LABORATORY_SHUTDOWN
+    global last_any_msg, last_temp, last_temp_ts, last_temp_external, computers_left, computers_right, last_energy, air_state_left, air_state_right, DOOR_STATUS, LABORATORY_SHUTDOWN, TIME_WAIT_COMPUTER_OFF
 
     topic = msg.topic
     payload_raw = msg.payload
     
     #print(msg.payload)
     
-    try:            
-        payload = json.loads(payload_raw.decode("utf-8", errors="ignore"))
+    try:
+        payload = json.loads(payload_raw.decode("utf-8"))
     except Exception:
-        # se vier inválido, ainda assim conta como atividade
-        payload = {}
+        payload = None
 
     # Atualiza atividade (para qualquer mensagem de máquina em PROCESS_COMPUTERS)
-    if topic == TOPIC_PROC:
+    if topic == TOPIC_COMPUTER_KEEPALIVE:
         with lock:
             last_any_msg = datetime.now()
 
-        computer = payload.get("ComputerName") or payload.get("Computer")
-        logger.info(computer + " receved message")
+        computer = payload.get("COMPUTER_NAME") or payload.get("Computer")
+        
         
         if not computer:
             return       
         
-        
+
+        action = payload.get("ACTION") 
+
         # Tenta ligar (condicionado à temperatura)]
         if computer in SIDE_LEFT:
-            #logger.info("Ligando ar esquerdo")
-            computers_left[computer].updateDateTime()       
-            set_air_on_if_needed(client, "LEFT")
-        else:            
-            set_air_on_if_needed(client, "RIGHT")
-            computers_right[computer].updateDateTime()
-            #logger.info("Ligando ar direito")           
+            
+            if action == "KEETALIVE":        
+                #logger.info("Ligando ar esquerdo")
+                computers_left[computer].updateDateTime()       
+                set_air_on_if_needed(client, "LEFT")
+                logger.info(computer + " receved message")
+            elif action == "SHUTDOWN":
+                computers_left[computer].shutdownComputer()
+                logger.info(f"Computador {computer} desligado.")
+
+        else:
+            if action == "KEETALIVE":        
+                #logger.info("Ligando ar esquerdo")
+                computers_right[computer].updateDateTime()       
+                set_air_on_if_needed(client, "RIGHT")
+                logger.info(computer + " receved message")
+            elif action == "SHUTDOWN":
+                computers_right[computer].shutdownComputer()
+                logger.info(f"Computador {computer} desligado.")  
 
     elif topic == TOPIC_AM2302:
         temp = parse_temperature(payload_raw)
@@ -458,12 +485,14 @@ def on_message(client, userdata, msg):
             DOOR_STATUS = "CLOSED"
     elif topic == TOPIC_RETURN_AIR:
         #print(payload)
-        command = payload.get("COMMAND")
-        if command is not None:
-            air_state_left = str(payload.get("LEFT")).lower()
-            air_state_right = str(payload.get("RIGHT")).lower()
-            logger.info(f"Status do ar condicionado atualizado: LEFT={air_state_left}, RIGHT={air_state_right}")
-    elif topic == TOPIC_STATUS_LABORATOY:        
+        if payload is not None:            
+            command = payload.get("COMMAND")
+            if command is not None:
+                air_state_left = str(payload.get("LEFT")).lower()
+                air_state_right = str(payload.get("RIGHT")).lower()
+                logger.info(f"Status do ar condicionado atualizado: LEFT={air_state_left}, RIGHT={air_state_right}")
+    elif topic == TOPIC_STATUS_LABORATOY:  
+        #envio de status do laboratorio para o último status do smartclassroom      
         payload = {
             "DOOR": DOOR_STATUS,
             "TEMPERATURE": last_temp,
@@ -475,10 +504,50 @@ def on_message(client, userdata, msg):
         }
         json_payload = json.dumps(payload)
         client.publish("C102/LAST_STATUS", json_payload)
+        
+        for pc in computers_left.values():
+            if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):
+                client.publish(TOPIC_PROCESS_COMPUTERS, pc.processes)
+                client.publish(TOPIC_SENSORS, pc.sensors)
+                
+
+        for pc in computers_right.values():
+            if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):                
+                client.publish(TOPIC_PROCESS_COMPUTERS, pc.processes)
+                client.publish(TOPIC_SENSORS, pc.sensors)
+
         logger.info(f"Status do laboratorio solicitado. Enviando: {json_payload}")
-    elif topic == TOPIC_COMPUTER_SHUTDOWN:
-        computer = payload.get("COMPUTER_NAME")
-        computers_left[computer].shutdownComputer()        
+    elif topic == TOPIC_PROCESS_COMPUTERS:
+
+        
+        computer = payload.get("ComputerName") or payload.get("Computer")
+       
+
+        if not computer:
+            return              
+
+        if computer in SIDE_LEFT:
+            computers_left[computer].setProcesses(payload_raw)
+        elif computer in SIDE_RIGHT:
+            computers_right[computer].setProcesses(payload_raw)
+         
+    elif topic == TOPIC_SENSORS:
+
+        try:
+            # código que pode gerar erro
+            computer = payload[0].get("COMPUTER_NAME") or payload[0].get("Computer")       
+
+            if not computer:
+                return              
+
+            if computer in SIDE_LEFT:
+                computers_left[computer].setSensors(payload_raw)
+            elif computer in SIDE_RIGHT:
+                computers_right[computer].setSensors(payload_raw)
+        except Exception as e:
+            logger.error(f"Erro ao processar sensores: {e}")
+
+        
         
 
 # ========= MAIN =========

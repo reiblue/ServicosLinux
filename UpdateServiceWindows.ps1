@@ -1,15 +1,15 @@
 # NOME DO SERVIÇO (como está registrado no Windows)
-$serviceName   = "MeuServico"
+$serviceName   = "SmartClassroom"
 
 # Caminho do deploy central (servidor)
-$sharePath     = "\\SERVIDOR\deploy\MeuServico"
+$sharePath     = "\\10.11.102.130\deploy\UpdatePrograms\SmartClassroom"
 
 # Pasta onde o serviço está instalado localmente
 $localPath     = "C:\Program Files\SmartClassroom"
 
 # Arquivos de versão
-$remoteVersionFile = Join-Path $sharePath "version.txt"
-$localVersionFile  = Join-Path $localPath "version.txt"
+$remoteVersionFile = Join-Path $sharePath "Version.txt"
+$localVersionFile  = Join-Path $localPath "Version.txt"
 
 # Lê versão remota
 if (-not (Test-Path $remoteVersionFile)) {
@@ -53,6 +53,10 @@ try {
 } catch {
     Write-Host "Não foi possível parar o serviço: $_"
 }
+
+Write-Host "Finalizando programas..."
+
+Get-Process -Name "SmartLabKeepToAwake" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host "Copiando arquivos do servidor..."
 
