@@ -3,6 +3,10 @@ Configurações importantes:
 Visualizar os dipositivos que conectaram no mqtt
 sudo tail -f /var/log/mosquitto/mosquitto.log
 
+Mensagens em tempo real
+journalctl -u  -f
+
+
 Escrever no /etc/mosquitto/mosquitto.conf
 # Desabilita acesso sem senha (CRÍTICO)
 allow_anonymous false
@@ -35,3 +39,13 @@ sudo mosquitto_passwd /etc/mosquitto/passwd service.windows.pc
 # Corrige o dono do arquivo de senhas
 sudo chown mosquitto:mosquitto /etc/mosquitto/passwd
 sudo chmod 640 /etc/mosquitto/passwd
+
+Microsoft.MicrosoftSolitaireCollection_3.9.5100.0_x64__8wekyb3d8bbwe
+
+C102/ENERGY_MONITOR
+{"LOCATED":"C102","VALUE":0.0025,"ACUMULADO":0.185,"PULSE":1,"KWH":0.0025}
+
+sudo journalctl -u smartlab.service -f
+
+#Log do mosquitto
+sudo tail -f /var/log/mosquitto/mosquitto.log

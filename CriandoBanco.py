@@ -36,6 +36,30 @@ def insert_kwh_consumption(cursor, location, accumulated, value, pulse):
         INSERT INTO KWH_CONSUMPTION (location, accumulated, value, pulse)
         VALUES (%s, %s, %s, %s)
     """, (location, accumulated, value, pulse))
+    
+def insert_door_status(cursor, located, status):
+    cursor.execute("""
+        INSERT INTO door_status (located, status)
+        VALUES (%s, %s)
+    """, (located, status))
+
+def insert_reles_status(cursor, located, command, value):
+    cursor.execute("""
+        INSERT INTO device_command (located, command, value)
+        VALUES (%s, %s, %s)
+    """, (located, command, value))
+
+def insert_disk_status(cursor, computer, total_size, free_space, used_space, used_percentage):
+    cursor.execute("""
+        INSERT INTO disk_status (computer, total_size, free_space, used_space, used_percentage)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (computer, total_size, free_space, used_space, used_percentage))
+
+def insert_idle(cursor, name, idle, total_runtime, effective_utilization):
+    cursor.execute("""
+        INSERT INTO idle_computer (name, idle, total_runtime, effective_utilization)
+        VALUES (%s, %s, %s, %s)
+    """, (name, idle, total_runtime, effective_utilization))
 
 # ==== Callback de conexão ====
 def on_connect(client, userdata, flags, rc):
@@ -44,6 +68,11 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("C102/PROCESS_COMPUTERS")
     client.subscribe("C102/AM2302")
     client.subscribe("C102/ENERGY_MONITOR")
+    client.subscribe("C102/DOOR_STATUS")
+    client.subscribe("C102/RELES")
+    client.subscribe("C102/DISK_STATUS")
+    client.subscribe("C102/IDLE")
+    
     #client.subscribe("#")
 
 # ==== Callback de mensagem ====
@@ -80,6 +109,40 @@ def on_message(client, userdata, msg):
         elif msg.topic == "C102/ENERGY_MONITOR":
             insert_kwh_consumption(cursor, payload['LOCATED'], payload['ACUMULADO'], payload['VALUE'], payload['PULSE'])
             print("Dados do sensor registrados")
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        elif msg.topic == "C102/DOOR_STATUS":
+            insert_door_status(cursor, payload['LOCATED'], payload['STATUS'])
+            print("Status da porta registrado")
+
+        elif msg.topic == "C102/RELES":
+            # JSON: {"LOCATED":"C102","COMMAND":"RELE","VALUE":false}
+            insert_reles_status(cursor, payload['LOCATED'], payload['COMMAND'], payload['VALUE'])
+            print("Status do relé registrado")
+
+        elif msg.topic == "C102/DISK_STATUS":
+
+            insert_disk_status(
+                cursor,
+                payload['COMPUTER'],
+                payload['totalSize'],
+                payload['freeSpace'],
+                payload['usedSpace'],
+                payload['usedPercentage']
+            )
+            print("Status do disco registrado")
+
+        elif msg.topic == "C102/IDLE":
+            # Aqui depende do seu JSON real:
+            # Se o payload usa JsonPropertyName: idle, ocioso, operacao, name
+            insert_idle(
+                cursor,
+                payload['name'],
+                payload['idle'],
+                payload['ocioso'],
+                payload['operacao']
+            )
+            print("Status de idle registrado")
 
         print(msg.topic)
 
@@ -94,7 +157,9 @@ def on_message(client, userdata, msg):
 # ==== Configuração do MQTT ====
 client = mqtt.Client()
 client.tls_set(ca_certs="/home/csti/ca.crt")  # Se estiver usando TLS
-#client.username_pw_set("usuario", "senha")  # Se necessário
+client.tls_insecure_set(True)
+client.username_pw_set("python_user", "cst1!C3PF#2026@python")
+
 client.on_connect = on_connect
 client.on_message = on_message
 

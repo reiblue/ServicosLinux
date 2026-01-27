@@ -4,7 +4,7 @@
 # email: rodrigo.peixoto@ifrj.edu.br
 # data de criação: 2025-06-10
 # data de modificação: 2025-12-08
-# versão: 1.0.7
+# versão: 1.0.8
 # descrição: Controla ar condicionado com base em atividade de computadores e temperatura ambiente.
 # Observa mensagens MQTT em C102\PROCESS_COMPUTERS e C102/AM2302.
 # Liga o ar se um computador ligar e a temperatura estiver alta.
@@ -17,12 +17,20 @@ import logging
 import sys
 import paho.mqtt.client as mqtt
 import sys
+from typing import Final
 from datetime import datetime, time as dtime, timedelta
 from dataclasses import dataclass, field
 
 
 
-
+VERSION: Final = "1.0.8"
+SYSTEM_DESCRIPTION: Final = (
+    "Gerenciamento de Laboratório Smart Lab\n"
+    "Sistema Smart Lab para gerenciamento de laboratório computacional com 20 computadores, \n"
+    "integrando sensores de temperatura e controle de ar-condicionado, monitoramento de energia elétrica, \n"
+    "estado da porta e acionamento de relés, utilizando comunicação MQTT para automação \n"
+    "e eficiência energética."
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -406,9 +414,13 @@ def on_message(client, userdata, msg):
     #print(msg.payload)
     
     try:
-        payload = json.loads(payload_raw.decode("utf-8"))
+        payload = json.loads(payload_raw.decode("utf-8"))       
+        
     except Exception:
         payload = None
+    
+    if payload is None:
+        return
 
     # Atualiza atividade (para qualquer mensagem de máquina em PROCESS_COMPUTERS)
     if topic == TOPIC_COMPUTER_KEEPALIVE:
@@ -416,6 +428,7 @@ def on_message(client, userdata, msg):
             last_any_msg = datetime.now()
 
         computer = payload.get("COMPUTER_NAME") or payload.get("Computer")
+        
         
         
         if not computer:
@@ -520,6 +533,7 @@ def on_message(client, userdata, msg):
     elif topic == TOPIC_PROCESS_COMPUTERS:
 
         
+        
         computer = payload.get("ComputerName") or payload.get("Computer")
        
 
@@ -552,6 +566,11 @@ def on_message(client, userdata, msg):
 
 # ========= MAIN =========
 def main():
+
+
+    logger.info(SYSTEM_DESCRIPTION)
+
+    logger.info(f"SmartLabServer v{VERSION} iniciando...")
     client = mqtt.Client()
 
     

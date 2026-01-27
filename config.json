@@ -1,0 +1,6 @@
+{
+  "modules_dirs": [
+    "{BASE}/modules",
+    "{HOME}/smartlab/modules"
+  ]
+}
