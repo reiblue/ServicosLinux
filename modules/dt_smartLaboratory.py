@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 # Módulo SmartLab (engine-compatible)
 # autor: Rodrigo Mendes Peixoto
-# versão: 1.0.8 (moduleized)
+# versão: 1.0.9 (moduleized)
+# Last update: 2026-03-23
 
 import json
 import threading
@@ -16,7 +17,8 @@ import paho.mqtt.client as mqtt
 
 
 MODULE_NAME: Final = "dt_smartLaboratory"
-VERSION: Final = "1.0.8"
+VERSION: Final = "1.0.9"
+LAST_UPDATE: Final = "2026-03-23"
 SYSTEM_DESCRIPTION: Final = (
     "Gerenciamento de Laboratório Smart Lab\n"
     "Sistema Smart Lab para gerenciamento de laboratório computacional com 20 computadores, \n"
@@ -36,8 +38,8 @@ logger.setLevel(logging.INFO)
 
 
 # ========= CONFIG (valores padrão; pode sobrescrever via context) =========
-#BROKER_HOST = "10.11.4.111"
-BROKER_HOST = "192.168.100.52"
+BROKER_HOST = "10.11.4.111"
+#BROKER_HOST = "192.168.100.52"
 BROKER_PORT = 8883
 KEEPALIVE   = 60
 
@@ -55,7 +57,7 @@ TOPIC_SENSORS = "C102/HARDWARE_SENSORS"
 TEMP_AIR_LEFT = 23
 TEMP_AIR_RIGHT = 23
 TIME_SLEEP = 60
-TIME_WAIT_COMPUTER_OFF = 20  # minutos
+TIME_WAIT_COMPUTER_OFF = 7  # minutos
 
 IDLE_MINUTES = 7
 MIN_TEMP_ON = 25.0
@@ -67,8 +69,8 @@ MIN_ENERGY = 0.1  # kwh
 def default_ca_path() -> str:
     if sys.platform == "win32":
         # deixe um padrão “seguro”; você pode sobrescrever no context
-        certificate_ca = r"C:\Users\Peixoto\Documents\Pós-Graduações\Mestrado\UFJF - Computação\Pesquisa\certs\notebook.crt"
-        #certificate_ca = r"C:\Program Files\SmartClassroom\ca.crt"
+        #certificate_ca = r"C:\Users\Peixoto\Documents\Pós-Graduações\Mestrado\UFJF - Computação\Pesquisa\certs\notebook.crt"
+        certificate_ca = r"C:\Program Files\SmartClassroom\ca.crt"
         return certificate_ca
     if sys.platform.startswith("linux"):
         return "/home/csti/ca.crt"
@@ -327,7 +329,7 @@ def on_connect(client, userdata, flags, rc, properties=None):
 
 def on_message(client, userdata, msg):
     global last_any_msg, last_temp, last_temp_ts, last_temp_external, last_energy
-    global air_state_left, air_state_right, DOOR_STATUS, LABORATORY_SHUTDOWN, TIME_WAIT_COMPUTER_OFF
+    global air_state_left, air_state_right, DOOR_STATUS, LABORATORY_SHUTDOWN, TIME_WAIT_COMPUTER_OFF, TOPIC_STATUS_LABORATOY
 
     topic = msg.topic
     payload_raw = msg.payload
@@ -423,16 +425,16 @@ def on_message(client, userdata, msg):
         for pc in computers_left.values():
             if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):
                 if pc.processes:
-                    client.publish(TOPIC_PROCESS_COMPUTERS, pc.processes)
+                    client.publish(TOPIC_PROCESS_COMPUTERS + "_request", pc.processes)
                 if pc.sensors:
-                    client.publish(TOPIC_SENSORS, pc.sensors)
+                    client.publish(TOPIC_SENSORS + "_request", pc.sensors)
 
         for pc in computers_right.values():
             if not pc.is_stale(TIME_WAIT_COMPUTER_OFF):
                 if pc.processes:
-                    client.publish(TOPIC_PROCESS_COMPUTERS, pc.processes)
+                    client.publish(TOPIC_PROCESS_COMPUTERS + "_request", pc.processes)
                 if pc.sensors:
-                    client.publish(TOPIC_SENSORS, pc.sensors)
+                    client.publish(TOPIC_SENSORS + "_request", pc.sensors)
 
         logger.info(f"Status solicitado. Enviando: {json_payload}")
 
