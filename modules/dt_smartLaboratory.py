@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # Módulo SmartLab (engine-compatible)
 # autor: Rodrigo Mendes Peixoto
-# versão: 1.0.9 (moduleized)
-# Last update: 2026-03-23
+# versão: 1.0.10 (moduleized)
+# Data de criação: 2026-0-05
+# Last update: 2026-04-08
 
 import json
 import threading
@@ -208,7 +209,7 @@ def set_air_off_if_needed(client: mqtt.Client, sideAir: str):
 # ========= WATCHDOG =========
 def watchdog_loop(client: mqtt.Client, stop_event: threading.Event):
     global last_any_msg, air_state_left, air_state_right, last_temp_external, last_temp, last_energy, MIN_ENERGY
-    global LABORATORY_SHUTDOWN
+    global LABORATORY_SHUTDOWN, TIME_WAIT_COMPUTER_OFF
 
     while not stop_event.is_set():
         time.sleep(TIME_SLEEP)
