@@ -97,3 +97,4 @@ echo "INSTALAÇÃO FINALIZADA!"
 echo "ACESSE O JUPYTER VIA:"
 echo "  http://SEU_IP_DO_SERVIDOR:8888"
 echo "=============================="
+

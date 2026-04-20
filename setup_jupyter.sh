@@ -10,6 +10,7 @@ if id "csti" &>/dev/null; then
     echo "Usuário csti já existe."
 else
     adduser csti
+	sudo usermod -aG sudo csti
 	su csti
 fi
 
@@ -19,7 +20,7 @@ cd /home/csti
 
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash Miniconda3-latest-Linux-x86_64.sh
-source ~/.bashrc
+
 
 conda create -n jupyter-env python=3.12 -y
 conda activate jupyter-env
