@@ -7,7 +7,7 @@ Projeto: Monitoramento IoT para Digital Twins e Smart Classrooms
 Instituição: Instituto Federal do Rio de Janeiro (IFRJ) - Campus Eng. Paulo de Frontin
 Autor: Rodrigo Mendes Peixoto
 Data da Criação: 20/08/2025
-Data de Atualização: 20 de Abril de 2026
+Data de Atualização: 17 de Maio de 2026
 
 Descrição:
     Este script atua como um serviço (listener) MQTT seguro via TLS, responsável
@@ -39,6 +39,7 @@ import json
 import psycopg2
 import paho.mqtt.client as mqtt
 from datetime import datetime
+from asyncio.log import logger
 
 # ==== Configuração do PostgreSQL ====
 db_config = {
@@ -79,6 +80,12 @@ def insert_door_status(cursor, located, status):
         INSERT INTO door_status (located, status)
         VALUES (%s, %s)
     """, (located, status))
+
+def insert_air_status(cursor, timestamp_event, located, left_status, right_status):
+    cursor.execute("""
+        INSERT INTO air_status ("TIMESTAMP", "LOCATED", "LEFT", "RIGHT")
+        VALUES (%s, %s, %s, %s)
+    """, (timestamp_event, located, left_status, right_status))
 
 def insert_reles_status(cursor, located, command, value):
     cursor.execute("""
@@ -131,7 +138,7 @@ def process_machine_signal(cursor, machine_name, action_payload):
                     SET action = 'SHUTDOWN', last_seen = NOW() 
                     WHERE timestamp = %s AND name = %s
                 """, (last_timestamp, machine_name))
-                print(f"[{machine_name}] Desligamento explícito recebido e atualizado.")
+                logger.info(f"[{machine_name}] Desligamento explícito recebido e atualizado.")
 
             else: 
                 # A máquina mandou 'keepalive' (status_atual == 'RUNNING')
@@ -142,7 +149,7 @@ def process_machine_signal(cursor, machine_name, action_payload):
                         SET last_seen = NOW() 
                         WHERE timestamp = %s AND name = %s
                     """, (last_timestamp, machine_name))
-                    print(f"[{machine_name}] Keepalive dentro do prazo. 'last_seen' atualizado.")
+                    logger.info(f"[{machine_name}] Keepalive dentro do prazo. 'last_seen' atualizado.")
                 
                 elif last_action == 'SHUTDOWN':
                     # Máquina foi desligada oficialmente há pouco tempo, mas já ligou de novo
@@ -150,7 +157,7 @@ def process_machine_signal(cursor, machine_name, action_payload):
                         INSERT INTO KEEPALIVE (name, location, action) 
                         VALUES (%s, %s, 'RUNNING')
                     """, (machine_name, location))
-                    print(f"[{machine_name}] Religa rápida detectada. Nova sessão 'RUNNING' criada.")
+                    logger.info(f"[{machine_name}] Religa rápida detectada. Nova sessão 'RUNNING' criada.")
 
         else:
             # O BANCO RETORNOU NONE: 
@@ -162,19 +169,19 @@ def process_machine_signal(cursor, machine_name, action_payload):
             """, (machine_name, location, status_atual))
             
             motivo = "Primeira vez" if status_atual == 'SHUTDOWN' else "Gap > 45 min ou Primeira Vez"
-            print(f"[{machine_name}] Nova linha inserida ({status_atual}). Motivo: {motivo}")
+            logger.info(f"[{machine_name}] Nova linha inserida ({status_atual}). Motivo: {motivo}")
 
         # Confirma as alterações com segurança
         cursor.connection.commit()
 
     except Exception as e:
         cursor.connection.rollback()
-        print(f"Erro ao processar {machine_name}: {e}")
+        logger.info(f"Erro ao processar {machine_name}: {e}")
 
 
 # ==== Callback de conexão ====
 def on_connect(client, userdata, flags, rc):
-    print("Conectado com código: "+str(rc))
+    logger.info("Conectado com código: "+str(rc))
     client.subscribe("C102/HARDWARE_SENSORS")
     client.subscribe("C102/PROCESS_COMPUTERS")
     client.subscribe("C102/AM2302")
@@ -183,8 +190,10 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("C102/RELES")
     client.subscribe("C102/DISK_STATUS")
     client.subscribe("C102/IDLE")
+    client.subscribe("C102/SHUTDOWN_COMPUTER")
+    client.subscribe("C102/AIR")
 
-    print("Conectando com a sala C106")
+    logger.info("Conectando com a sala C106")
     client.subscribe("C106/HARDWARE_SENSORS")
     client.subscribe("C106/PROCESS_COMPUTERS")
     client.subscribe("C106/AM2302")
@@ -193,6 +202,8 @@ def on_connect(client, userdata, flags, rc):
     #client.subscribe("C106/RELES")
     client.subscribe("C106/DISK_STATUS")
     client.subscribe("C106/IDLE")
+    client.subscribe("C106/SHUTDOWN_COMPUTER")
+    client.subscribe("C106/AIR")
     
     #client.subscribe("#")
 
@@ -204,42 +215,71 @@ def on_message(client, userdata, msg):
         cursor = conn.cursor()
 
         if msg.topic == "C102/HARDWARE_SENSORS" or msg.topic == "C106/HARDWARE_SENSORS":
-            #print('Sensors', payload['Computer'], 'Time: ', payload['Timestamp'])
+            #logger.info('Sensors', payload['Computer'], 'Time: ', payload['Timestamp'])
             for item in payload:
                 computer = item['Computer']
                 name = item['Name']
-		#print('Hardware: ', computer, 'Time: ', timestamp)
-                #print("Time HARDWARE_SENSORS: ", item['Timestamp'])
+		#logger.info('Hardware: ', computer, 'Time: ', timestamp)
+                #logger.info("Time HARDWARE_SENSORS: ", item['Timestamp'])
                 timestamp = item['Timestamp']
-                print('Sensors: ', computer, 'Time: ', timestamp)
+                logger.info('Sensors: ', computer, 'Time: ', timestamp)
                 for sensor in item.get('Sensors', []):
                     insert_hardware_sensor(cursor, computer, name, sensor['Type'], sensor['Name'], sensor['Value'], timestamp)
 
         elif msg.topic == "C102/PROCESS_COMPUTERS" or msg.topic == "C106/PROCESS_COMPUTERS":
             computer_name = payload['ComputerName']
-            #print("Time PROCESS_COMPUTERS: ", payload['Timestamp'])
+            #logger.info("Time PROCESS_COMPUTERS: ", payload['Timestamp'])
             timestamp = payload['Timestamp']
-            print('Process: ', computer_name, 'Time: ', timestamp)
+            logger.info('Process: ', computer_name, 'Time: ', timestamp)
             for process in payload['ProcessList']:
                 insert_process(cursor, computer_name, process['PID'], process['CpuPercentage'], process['Name'], process['Timestamp'])
-                #print(process['Name'], ' : ', process['Timestamp'])
+                #logger.info(process['Name'], ' : ', process['Timestamp'])
         elif msg.topic == "C102/AM2302" or msg.topic == "C106/AM2302":
-            print("payload:", payload['LOCATED'], "=", payload['TEMPERATURE'], "=",  payload['HUMIDITY'])
+            logger.info("payload:", payload['LOCATED'], "=", payload['TEMPERATURE'], "=",  payload['HUMIDITY'])
             insert_sensor_am2302(cursor, payload['LOCATED'], payload['TEMPERATURE'], payload['HUMIDITY'])
-            print("Dados do sensor registrados")
+            logger.info("Dados do sensor registrados")
         elif msg.topic == "C102/ENERGY_MONITOR":
             insert_kwh_consumption(cursor, payload['LOCATED'], payload['ACUMULADO'], payload['VALUE'], payload['PULSE'])
-            print("Dados do sensor registrados")
+            logger.info("Dados do sensor registrados")
 #-----------------------------------------------------------------------------------------------------------------------------------------------------------
 
         elif msg.topic == "C102/DOOR_STATUS":
             insert_door_status(cursor, payload['LOCATED'], payload['STATUS'])
-            print("Status da porta registrado")
+            logger.info("Status da porta registrado")
+
+        elif msg.topic == "C102/AIR":
+
+            if msg.payload != b"" : 
+                try:
+                    payload = json.loads(msg.payload.decode('utf-8'))
+                    
+                    # 3. Agora sim a variável "payload" existe e você pode checar o LOCATED!
+                    if "LOCATED" in payload:
+                        # Mapa para converter o texto em Booleano
+                        status_map = {"ON": True, "OFF": False}
+                        
+                        # Extrai os dados do JSON, usando 'OFF' como padrão se a chave não existir
+                        # O .upper() garante que funcionará mesmo se vier 'on' ou 'Off'
+                        left_status = status_map.get(payload.get('LEFT', 'OFF').upper(), False)
+                        right_status = status_map.get(payload.get('RIGHT', 'OFF').upper(), False)
+                        
+                        # Pega o horário atual
+                        timestamp_event = datetime.now()
+
+                        print(payload)
+                        
+                        # Faz uma única inserção no banco
+                        insert_air_status(cursor, timestamp_event, payload['LOCATED'], left_status, right_status)
+                        
+                        logger.info("Status do ar condicionado registrado com sucesso")
+
+                except json.JSONDecodeError:
+                    logger.info("Payload JSON inválido: " + str(msg.payload))   
 
         elif msg.topic == "C102/RELES":
             # JSON: {"LOCATED":"C102","COMMAND":"RELE","VALUE":false}
             insert_reles_status(cursor, payload['LOCATED'], payload['COMMAND'], payload['VALUE'])
-            print("Status do relé registrado")
+            logger.info("Status do relé registrado")
 
         elif msg.topic == "C102/DISK_STATUS" or msg.topic == "C106/DISK_STATUS":
 
@@ -251,7 +291,7 @@ def on_message(client, userdata, msg):
                 payload['usedSpace'],
                 payload['usedPercentage']
             )
-            print("Status do disco registrado")
+            logger.info("Status do disco registrado")
 
         # Verifica se o tópico termina com /IDLE, não importa de qual laboratório venha
         # elif msg.topic.endswith("/IDLE"):
@@ -265,12 +305,12 @@ def on_message(client, userdata, msg):
                 payload['ocioso'],
                 payload['operacao']
             )
-            print("Status de idle registrado")
+            logger.info("Status de idle registrado")
         elif msg.topic == "C102/SHUTDOWN_COMPUTER" or msg.topic == "C106/SHUTDOWN_COMPUTER":
-            # Print dinâmico para você saber exatamente o que chegou no log
+            # logger.info dinâmico para você saber exatamente o que chegou no log
             acao_recebida = payload['ACTION']
             maquina = payload['COMPUTER_NAME']
-            print(f"Sinal de {acao_recebida} recebido da máquina {maquina}.")
+            logger.info(f"Sinal de {acao_recebida} recebido da máquina {maquina}.")
             
             # Chama a nossa função inteligente que lida com os 45 minutos
             process_keepalive(
@@ -279,15 +319,15 @@ def on_message(client, userdata, msg):
                 acao_recebida               
             )
 
-        print(msg.topic)
+        logger.info(msg.topic)
 
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"Dados inseridos do tópico {msg.topic}")
+        logger.info(f"Dados inseridos do tópico {msg.topic}")
 
     except Exception as e:
-        print(f"Erro ao processar mensagem: {e}")
+        logger.error(f"Erro ao processar mensagem: {e}")
 
 # ==== Configuração do MQTT ====
 client = mqtt.Client()

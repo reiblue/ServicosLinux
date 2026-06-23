@@ -1,0 +1,27 @@
+Algoritmo: Engine de Módulos Dinâmicos
+Input: config.json (modules_dirs) indica a pasta onde está cada módulo
+Output: N threads de módulos rodando, com parada coordenada
+
+Obtém, via list_all_py_files, todos os arquivos dos módulos
+
+function start_module
+	stop_event -> atribui um evento de saída ou encerramento da thread
+	setup      -> atribui um evento início da thread
+	run        -> atribui evento de loop da tread
+	runtime    -> atribui uma thread, inicia a thread do módulo
+	return runtime
+
+
+function main -> função principal que roda o sistema
+
+	runtimes -> guarda informações sobre a thread de cada módulo
+	context  -> permite passar informações comuns para todas as threads
+	shutdown_flag -> flag de controle do sistema, indicando se cada thread do módulo está funcionando
+
+	foreach módulo do
+		start_module -> inicia o módulo e atribui uma thread para ele
+
+	while shutdown_flag -> exite flag definida e a thread está ativa:
+		time.sleep(0.5)
+
+	stop_all -> encerramento do programa

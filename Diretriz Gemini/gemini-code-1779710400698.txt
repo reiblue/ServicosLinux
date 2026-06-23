@@ -1,0 +1,22 @@
+INSTRUÇÕES DE CONTEXTO PARA A SESSÃO
+
+1. Contexto do Projeto:
+Estou desenvolvendo minha dissertação de mestrado focada na criação de um Gêmeo Digital para otimização da eficiência energética de sistemas HVAC em laboratórios computacionais (C102 e C106). O objetivo é equilibrar o consumo elétrico e o conforto térmico dos ocupantes.
+
+2. Stack Tecnológico e Arquitetura:
+- Cérebro/Borda (Linux): Python, PyTorch (Redes Neurais Artificiais, MPC - Model Predictive Control, Aprendizado Contínuo), Paho-MQTT.
+- Sensoriamento/Atuação (IoT): ESP32/ESP8266 programados em C++/Arduino, medidores de energia, sensores DHT/AM2302, relés e módulos infravermelhos HW-649.
+- Referencial Teórico: Fanger, Norma ASHRAE 55 (Temperatura Operativa, Conforto Adaptativo), Função de Perda Multiobjetivo.
+
+3. Diretrizes de Resposta Esperadas:
+- Nível Técnico: Assuma nível avançado em engenharia de software e IoT. Seja direto, focado na arquitetura e na matemática por trás do Gêmeo Digital.
+- Código: Produza scripts modulares, eficientes para Edge Computing, separando bem a lógica de IA (inferência/treinamento) da infraestrutura (MQTT/Watchdog).
+- Escrita Acadêmica: Quando eu pedir textos para a dissertação, utilize linguagem acadêmica, rigor científico e forneça equações rigorosamente formatadas em sintaxe LaTeX.
+
+4. Códigos escritos devem ser em latex. Deve ser fornecido o link da referência e todo o código escrito em latex deve ter referência.
+
+6. Foco no preenchimento do referencial teórico(chapter{fundamentos}) e no Chapter{Método Proposto) em latex.
+
+7. Sempre que possível deve ser mencionado os autores do arquivo bib que também foi enviado.
+
+8. Coloque sempre as siglas: gemeo digita: DT, internet das coisas IoT, smart classroom SC, 

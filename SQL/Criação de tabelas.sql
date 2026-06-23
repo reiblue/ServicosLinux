@@ -21,6 +21,13 @@ CREATE TABLE KEEPALIVE (
     name VARCHAR(100)
 );
 
+CREATE TABLE air_status (
+    "TIMESTAMP" TIMESTAMP PRIMARY KEY,
+    "LOCATED" VARCHAR(10),
+    "LEFT" BOOLEAN,
+    "RIGHT" BOOLEAN
+);
+
 
 --=============================
 --Logando: psql -U csti -d c102
@@ -29,3 +36,5 @@ SELECT table_name
 FROM information_schema.tables 
 WHERE table_schema = 'public' 
   AND table_type = 'BASE TABLE';
+
+psql -U csti -d c102

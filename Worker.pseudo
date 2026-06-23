@@ -1,0 +1,5 @@
+NAME_MODULE -> Nome do modulo
+
+function setup -> carregamento inicial de todas as propriedades do modulo
+function run -> loop que trabalha no sistema
+function teardown

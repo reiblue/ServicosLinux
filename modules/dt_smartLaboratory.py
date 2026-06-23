@@ -461,7 +461,9 @@ def on_message(client, userdata, msg):
             elif computer in SIDE_RIGHT:
                 computers_right[computer].setSensors(payload_raw)
         except Exception as e:
-            logger.error(f"Erro ao processar sensores: {e}")
+            string_error = f"Erro ao processar sensores: {e}"
+            logger.info(string_error)
+            logger.error(string_error)
 
 
 # ========= LIFECYCLE DO MÓDULO (ENGINE) =========
@@ -521,7 +523,9 @@ def setup(context: dict):
             client.connect(BROKER_HOST, BROKER_PORT, KEEPALIVE)
             try_and_timeout = False
         except Exception as e:
-            logger.error(f"[run] erro ao conectar ao broker MQTT: {e}")
+            string_error = f"[run] erro ao conectar ao broker MQTT: {e}"
+            logger.info(string_error)
+            logger.error(string_error)
             
             if e and "timed out" not in str(e).lower():
                 try_and_timeout = False  # Não tenta mais se for timeout
@@ -548,6 +552,8 @@ def run(stop_event: threading.Event, context: dict):
     try:
         while not stop_event.is_set():
             time.sleep(0.5)
+
+    
     finally:
         logger.info("[run] stop_event recebido. Encerrando...")
 
@@ -566,17 +572,21 @@ def teardown(context: dict):
         if _watchdog_thread is not None and _watchdog_thread.is_alive():
             _watchdog_thread.join(timeout=2)
     except Exception as e:
-        logger.error(f"[teardown] erro ao parar watchdog: {e}")
+        string_error = f"[teardown] erro ao parar watchdog: {e}"
+        logger.info(string_error)
+        logger.error(string_error)
 
     try:
         if _client is not None:
             _client.loop_stop()
             _client.disconnect()
     except Exception as e:
-        logger.error(f"[teardown] erro ao desconectar MQTT: {e}")
+        string_error = f"[teardown] erro ao desconectar MQTT: {e}"
+        logger.info(string_error)
+        logger.error(string_error)
 
     _client = None
     _watchdog_stop_event = None
     _watchdog_thread = None
 
-    logger.info("[teardown] finalizado.")
+    logger.info("[teardown] Módulo finalizado.")
