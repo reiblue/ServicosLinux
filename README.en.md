@@ -6,7 +6,7 @@ A collection of services, scripts, and modules for the intelligent management of
 
 The system integrates IoT sensors (ESP), an **MQTT broker (Mosquitto with TLS)**, a **PostgreSQL** database, and **Digital Twin** modules with predictive AI to monitor and automate the laboratories (e.g., C102 and C106): air-conditioning control, energy monitoring, temperature/humidity, door status, and computer telemetry.
 
-> **Author:** Rodrigo Mendes Peixoto — rodrigo.peixoto@ifrj.edu.br
+> **Author:** Rodrigo Mendes Peixoto 
 
 ---
 
