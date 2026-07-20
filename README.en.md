@@ -71,7 +71,6 @@ The system integrates IoT sensors (ESP), an **MQTT broker (Mosquitto with TLS)**
 |---|---|
 | `jsonExamples/` | Example JSON payloads for the MQTT topics: `C102-AIR`, `C102-AM2302`, `C102-ENERGY_MONITOR`, `C102-DOOR_STATUS`, `C102-RELES`, `C102-STATUS`, `C102-IDLE`, `C102-LAST_STATUS`, `C102-SHUTDOWN_COMPUTER`, `C102_DISK_STATUS`, among others. |
 | `PseudoCodigo.pseudo` / `Worker.pseudo` / `pseudo.xml` | Pseudocode and logic drafts of the system. |
-| `Diretriz Gemini/` | AI-assisted notes/guidelines. |
 
 ---
 
