@@ -71,7 +71,7 @@ O sistema integra sensores IoT (ESP), broker **MQTT (Mosquitto com TLS)**, banco
 |---|---|
 | `jsonExamples/` | Exemplos de payloads JSON dos tópicos MQTT: `C102-AIR`, `C102-AM2302`, `C102-ENERGY_MONITOR`, `C102-DOOR_STATUS`, `C102-RELES`, `C102-STATUS`, `C102-IDLE`, `C102-LAST_STATUS`, `C102-SHUTDOWN_COMPUTER`, `C102_DISK_STATUS`, entre outros. |
 | `PseudoCodigo.pseudo` / `Worker.pseudo` / `pseudo.xml` | Pseudocódigos e rascunhos de lógica do sistema. |
-| `Diretriz Gemini/` | Anotações/diretrizes geradas com auxílio de IA. |
+
 
 ---
 
