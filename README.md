@@ -1,3 +1,5 @@
+🌐 **Português** | [English](./README.en.md)
+
 # ServicosLinux — Smart Lab IoT & Digital Twin
 
 Coleção de serviços, scripts e módulos para o gerenciamento inteligente de laboratórios computacionais (**Smart Lab / Smart Classroom**) do **Instituto Federal do Rio de Janeiro (IFRJ) — Campus Eng. Paulo de Frontin**.
