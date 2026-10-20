@@ -62,7 +62,7 @@ TIME_WAIT_COMPUTER_OFF = 7  # minutos
 
 IDLE_MINUTES = 7
 MIN_TEMP_ON = 25.0
-MIN_TEMP_OFF = 20.0
+MIN_TEMP_OFF = 24.0 #histerese de 1ºC
 MIN_ENERGY = 0.1  # kwh
 
 
@@ -86,7 +86,7 @@ DOOR_STATUS = "NONE"
 last_any_msg = datetime.min
 air_state_left = "off"
 air_state_right = "off"
-last_temp = 29.0
+last_temp = 24.0
 last_temp_ts = None
 last_temp_external = None
 last_energy = 0.0
@@ -174,7 +174,7 @@ def set_air_on_if_needed(client: mqtt.Client, sideAir: str):
 
 
 def set_air_off_if_needed(client: mqtt.Client, sideAir: str):
-    global air_state_left, air_state_right, last_temp
+    global air_state_left, air_state_right, last_temp, MIN_TEMP_OFF
 
     with lock:
         if air_state_left == "off" and air_state_right == "off":
